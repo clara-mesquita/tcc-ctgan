@@ -7,8 +7,14 @@ import pandas as pd
 
 
 def read_csv(csv_filename, meta_filename=None, header=True, discrete=None):
+    print("DEBUG: Entered read_csv function")
+    
     """Read a csv file."""
-    data = pd.read_csv(csv_filename, header='infer' if header else None)
+    data = pd.read_csv(csv_filename, header='infer' if header else None)  
+    data = data.drop(columns=data.columns[0])  
+    data = data.drop(columns = ['Link_bottleneck'])
+    print(data.info())
+    print(data.head())
 
     if meta_filename:
         with open(meta_filename) as meta_file:
@@ -86,3 +92,11 @@ def write_tsv(data, meta, output_filename):
                     print(meta['column_info'][idx][int(col)], end=' ', file=f)
 
             print(file=f)
+
+def get_null_mask(df):
+    """
+    Retorna uma máscara com 1 onde o DataFrame tem valores nulos,
+    e 0 onde o valor está presente.
+    """
+    null_mask = df.isna().astype(int)
+    return null_mask

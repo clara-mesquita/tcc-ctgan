@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import optim
-from torch.nn import BatchNorm1d, Dropout, LeakyReLU, Linear, Module, ReLU, Sequential, functional
+from torch.nn import BatchNorm1d, Linear, Module, ReLU, functional, LeakyReLU, Dropout, Sequential
 from tqdm import tqdm
 
 from ctgan.data_sampler import DataSampler
@@ -14,21 +14,92 @@ from ctgan.data_transformer import DataTransformer
 from ctgan.synthesizers.base import BaseSynthesizer, random_state
 
 
+# class Discriminator(Module):
+#     """Discriminator for the CTGAN."""
+
+#     def __init__(self, input_dim, discriminator_dim, pac=10):
+#         super(Discriminator, self).__init__()
+#         dim = input_dim * pac
+#         self.pac = pac
+#         self.pacdim = dim
+#         seq = []
+#         for item in list(discriminator_dim):
+#             seq += [Linear(dim, item), LeakyReLU(0.2), Dropout(0.5)]
+#             dim = item
+
+#         seq += [Linear(dim, 1)]
+#         self.seq = Sequential(*seq)
+
+#     def calc_gradient_penalty(self, real_data, fake_data, device='cpu', pac=10, lambda_=10):
+#         """Compute the gradient penalty."""
+#         alpha = torch.rand(real_data.size(0) // pac, 1, 1, device=device)
+#         alpha = alpha.repeat(1, pac, real_data.size(1))
+#         alpha = alpha.view(-1, real_data.size(1))
+
+#         interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+
+#         disc_interpolates = self(interpolates)
+
+#         gradients = torch.autograd.grad(
+#             outputs=disc_interpolates,
+#             inputs=interpolates,
+#             grad_outputs=torch.ones(disc_interpolates.size(), device=device),
+#             create_graph=True,
+#             retain_graph=True,
+#             only_inputs=True,
+#         )[0]
+
+#         gradients_view = gradients.view(-1, pac * real_data.size(1)).norm(2, dim=1) - 1
+#         gradient_penalty = ((gradients_view) ** 2).mean() * lambda_
+
+#         return gradient_penalty
+
+#     def forward(self, input_):
+#         """Apply the Discriminator to the `input_`."""
+#         assert input_.size()[0] % self.pac == 0
+#         return self.seq(input_.view(-1, self.pacdim))
+
 class Discriminator(Module):
-    """Discriminator for the CTGAN."""
-
-    def __init__(self, input_dim, discriminator_dim, pac=10):
-        super(Discriminator, self).__init__()
-        dim = input_dim * pac
+    def __init__(self, data_dim, cond_dim, discriminator_dim, pac=10, use_mask=False):
+        super().__init__()
+        self.use_mask = use_mask
         self.pac = pac
-        self.pacdim = dim
-        seq = []
-        for item in list(discriminator_dim):
-            seq += [Linear(dim, item), LeakyReLU(0.2), Dropout(0.5)]
-            dim = item
+        # Se usa data + cond + mask => input_dim = data_dim + cond_dim + data_dim
+        # = 2*data_dim + cond_dim
+        self.input_dim = (2 * data_dim) + cond_dim if use_mask else (data_dim + cond_dim)
+        self.pacdim = self.input_dim * pac
 
-        seq += [Linear(dim, 1)]
+        # Agora criamos camadas baseadas em self.pacdim
+        dim = self.pacdim
+
+        seq = []
+        for hidden_size in discriminator_dim:
+            seq.append(Linear(dim, hidden_size))
+            seq.append(LeakyReLU(0.2))
+            seq.append(Dropout(0.5))
+            dim = hidden_size
+        
+        seq.append(Linear(dim, 1))
         self.seq = Sequential(*seq)
+
+
+    def forward(self, data, mask=None, cond=None):
+        # data: (B, data_dim)
+        # mask: (B, data_dim) ou None
+        # cond: (B, cond_dim) ou None
+        
+        # Se quiser concatenar cond:
+        if cond is not None:
+            data = torch.cat([data, cond], dim=1)  # (B, data_dim + cond_dim)
+
+        if (mask is not None) and self.use_mask:
+            data = torch.cat([data, mask], dim=1)  # + data_dim => shape (B, 2*data_dim + cond_dim)
+        
+        assert data.size(0) % self.pac == 0
+
+        # (B, self.input_dim) => (B, self.input_dim * pac)
+        out = self.seq(data.view(-1, self.pacdim))
+        return out
 
     def calc_gradient_penalty(self, real_data, fake_data, device='cpu', pac=10, lambda_=10):
         """Compute the gradient penalty."""
@@ -54,12 +125,6 @@ class Discriminator(Module):
 
         return gradient_penalty
 
-    def forward(self, input_):
-        """Apply the Discriminator to the `input_`."""
-        assert input_.size()[0] % self.pac == 0
-        return self.seq(input_.view(-1, self.pacdim))
-
-
 class Residual(Module):
     """Residual layer for the CTGAN."""
 
@@ -77,24 +142,81 @@ class Residual(Module):
         return torch.cat([out, input_], dim=1)
 
 
-class Generator(Module):
-    """Generator for the CTGAN."""
+# class Generator(Module):
+#     """Generator for the CTGAN."""
 
-    def __init__(self, embedding_dim, generator_dim, data_dim):
-        super(Generator, self).__init__()
-        dim = embedding_dim
+#     def __init__(self, embedding_dim, generator_dim, data_dim):
+#         super(Generator, self).__init__()
+#         dim = embedding_dim
+#         seq = []
+#         for item in list(generator_dim):
+#             seq += [Residual(dim, item)]
+#             dim += item
+#         seq.append(Linear(dim, data_dim))
+#         self.seq = Sequential(*seq)
+
+#     def forward(self, input_):
+#         """Apply the Generator to the `input_`."""
+#         data = self.seq(input_)
+#         return data
+
+class Generator(Module):
+    def __init__(self, embedding_dim, cond_dim, generator_dim, data_dim):
+        super().__init__()
+        # Se você concatena x_obs + mask + noise + cond:
+        self.input_dim = (data_dim + data_dim) + embedding_dim + cond_dim
+        # ou (2 * data_dim) + (embedding_dim + cond_dim)
+
+        dim = self.input_dim
+        
+        # Monta as camadas
         seq = []
-        for item in list(generator_dim):
-            seq += [Residual(dim, item)]
-            dim += item
+        for hidden_size in generator_dim:
+            seq.append(Residual(dim, hidden_size))  # Residual ou Linear
+            dim += hidden_size
+        
+        # Camada final gera data_dim (imputação)
         seq.append(Linear(dim, data_dim))
+
         self.seq = Sequential(*seq)
 
-    def forward(self, input_):
-        """Apply the Generator to the `input_`."""
-        data = self.seq(input_)
-        return data
+    def forward(self, x_obs, mask, noise, cond=None):
+        # Se 'cond' não for None, concatene no 'noise'
+        # ou concatene tudo de uma vez
+        if cond is not None:
+            noise = torch.cat([noise, cond], dim=1)  # shape: (B, embedding_dim + cond_dim)
 
+        input_ = torch.cat([x_obs, mask, noise], dim=1)  # (B, 2*data_dim + embedding_dim + cond_dim)
+        
+        data_generated = self.seq(input_)
+        
+        # Ex.: se for imputação, faça:
+        #   imputed_data = x_obs * mask + data_generated * (1 - mask)
+        #   return imputed_data
+        return data_generated
+
+
+
+def get_incomplete_batch(train_data, batch_size, device='cpu'):
+    # 1) Selecione índices aleatórios (ou use DataLoader se preferir)
+    idx = np.random.choice(len(train_data), size=batch_size, replace=False)
+    
+    # 2) Extraia um subset do dataset
+    batch = train_data[idx]  # shape: (B, D)
+    
+    # 3) Crie a mask_batch: 1 se não é NaN, 0 se é NaN
+    mask_batch = ~np.isnan(batch)      # boolean array (True/False)
+    mask_batch = mask_batch.astype(float)  # converter para 0/1 em float
+    
+    # 4) Crie x_obs_batch: copie o batch e substitua NaN por 0
+    x_obs_batch = np.copy(batch)
+    x_obs_batch[np.isnan(x_obs_batch)] = 0.0
+    
+    # 5) Converter para torch.Tensor
+    x_obs_batch = torch.tensor(x_obs_batch, dtype=torch.float32).to(device)
+    mask_batch  = torch.tensor(mask_batch,  dtype=torch.float32).to(device)
+    
+    return x_obs_batch, mask_batch
 
 class CTGAN(BaseSynthesizer):
     """Conditional Table GAN Synthesizer.
@@ -325,14 +447,26 @@ class CTGAN(BaseSynthesizer):
         )
 
         data_dim = self._transformer.output_dimensions
+        cond_dim = self._data_sampler.dim_cond_vec()
 
         self._generator = Generator(
-            self._embedding_dim + self._data_sampler.dim_cond_vec(), self._generator_dim, data_dim
-        ).to(self._device)
+    embedding_dim=self._embedding_dim, 
+    cond_dim=cond_dim,
+    generator_dim=self._generator_dim,
+    data_dim=data_dim
+).to(self._device)
 
         discriminator = Discriminator(
-            data_dim + self._data_sampler.dim_cond_vec(), self._discriminator_dim, pac=self.pac
-        ).to(self._device)
+        data_dim + self._data_sampler.dim_cond_vec(),
+        cond_dim=cond_dim,
+        discriminator_dim= self._discriminator_dim,
+        pac=self.pac,
+        use_mask=True    # <--- IMPORTANTE se quiser passar máscara
+    ).to(self._device)
+        
+        print("data_dim =", data_dim)
+        print("cond_vec_dim =", self._data_sampler.dim_cond_vec())
+        print("discriminator_dim =", self._discriminator_dim)
 
         optimizerG = optim.Adam(
             self._generator.parameters(),
@@ -340,6 +474,10 @@ class CTGAN(BaseSynthesizer):
             betas=(0.5, 0.9),
             weight_decay=self._generator_decay,
         )
+
+        print("oi")
+        print(discriminator)                    # ver se mostra camadas
+        print(list(discriminator.parameters()))
 
         optimizerD = optim.Adam(
             discriminator.parameters(),
@@ -362,6 +500,19 @@ class CTGAN(BaseSynthesizer):
         for i in epoch_iterator:
             for id_ in range(steps_per_epoch):
                 for n in range(self._discriminator_steps):
+
+                    x_obs_batch, mask_batch_fake = get_incomplete_batch(
+                    train_data,
+                    batch_size=self._batch_size,
+                    device=self._device
+                    )
+
+                    x_obs_real, mask_batch_real = get_incomplete_batch(
+                    train_data,
+                    batch_size=self._batch_size,
+                    device=self._device
+                )
+                    
                     fakez = torch.normal(mean=mean, std=std)
 
                     condvec = self._data_sampler.sample_condvec(self._batch_size)
@@ -383,20 +534,24 @@ class CTGAN(BaseSynthesizer):
                         )
                         c2 = c1[perm]
 
-                    fake = self._generator(fakez)
-                    fakeact = self._apply_activate(fake)
+                    # fake = self._generator(fakez)
+                    # fakeact = self._apply_activate(fake)
 
-                    real = torch.from_numpy(real.astype('float32')).to(self._device)
+                    imputed_data = self._generator(x_obs_batch, mask_batch_fake, fakez)
+                    fakeact = self._apply_activate(imputed_data)  # ativação
 
+                    # real = torch.from_numpy(real.astype('float32')).to(self._device)
+                    real_data = x_obs_real 
+                    
                     if c1 is not None:
                         fake_cat = torch.cat([fakeact, c1], dim=1)
-                        real_cat = torch.cat([real, c2], dim=1)
+                        real_cat = torch.cat([real_data, c2], dim=1)
                     else:
-                        real_cat = real
+                        real_cat = real_data
                         fake_cat = fakeact
 
-                    y_fake = discriminator(fake_cat)
-                    y_real = discriminator(real_cat)
+                    y_fake = discriminator(fake_cat, mask_batch_fake)
+                    y_real = discriminator(real_cat, mask_batch_real)
 
                     pen = discriminator.calc_gradient_penalty(
                         real_cat, fake_cat, self._device, self.pac
@@ -408,7 +563,14 @@ class CTGAN(BaseSynthesizer):
                     loss_d.backward()
                     optimizerD.step()
 
+                x_obs_batch, mask_batch_fake = get_incomplete_batch(
+                train_data,
+                batch_size=self._batch_size,
+                device=self._device
+            )
+                
                 fakez = torch.normal(mean=mean, std=std)
+
                 condvec = self._data_sampler.sample_condvec(self._batch_size)
 
                 if condvec is None:
@@ -419,18 +581,19 @@ class CTGAN(BaseSynthesizer):
                     m1 = torch.from_numpy(m1).to(self._device)
                     fakez = torch.cat([fakez, c1], dim=1)
 
-                fake = self._generator(fakez)
-                fakeact = self._apply_activate(fake)
+                imputed_data = self._generator(x_obs_batch, mask_batch_fake, fakez)
+                fakeact = self._apply_activate(imputed_data)
 
                 if c1 is not None:
-                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
+                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1), mask_batch_fake)
                 else:
-                    y_fake = discriminator(fakeact)
+                    y_fake = discriminator(fakeact, mask_batch_fake)
+
 
                 if condvec is None:
                     cross_entropy = 0
                 else:
-                    cross_entropy = self._cond_loss(fake, c1, m1)
+                    cross_entropy = self._cond_loss(imputed_data, c1, m1)
 
                 loss_g = -torch.mean(y_fake) + cross_entropy
 
@@ -520,3 +683,72 @@ class CTGAN(BaseSynthesizer):
         self._device = device
         if self._generator is not None:
             self._generator.to(self._device)
+
+
+    def impute(self, incomplete_data, batch_size=None, condition_column=None, condition_value=None):
+        if batch_size is None:
+            batch_size = self._batch_size
+
+        incomplete_data_t = self._transformer.transform(incomplete_data)
+
+        n = len(incomplete_data_t)
+        steps = (n // batch_size) + 1
+        imputed_result = []
+
+        for step_i in range(steps):
+            start = step_i * batch_size
+            end = min((step_i + 1) * batch_size, n)
+            if start >= end:
+                break
+
+            batch_incomplete = incomplete_data_t[start:end]
+            mask_batch = ~np.isnan(batch_incomplete)
+            x_obs_batch = np.copy(batch_incomplete)
+            x_obs_batch[np.isnan(x_obs_batch)] = 0.0
+
+            x_obs_batch_torch = torch.tensor(x_obs_batch, dtype=torch.float32, device=self._device)
+            mask_batch_torch = torch.tensor(mask_batch.astype(float), dtype=torch.float32, device=self._device)
+
+            curr_size = x_obs_batch_torch.size(0)
+            noise = torch.randn((curr_size, self._embedding_dim), device=self._device)
+
+            if condition_column is not None and condition_value is not None:
+                condition_info = self._transformer.convert_column_name_value_to_id(
+                    condition_column, condition_value
+                )
+                global_condition_vec = self._data_sampler.generate_cond_from_condition_column_info(
+                    condition_info, self._batch_size
+                )
+            else:
+                global_condition_vec = None
+
+            if condition_column and condition_value:
+                cond_vec = global_condition_vec[:curr_size]
+                cond_vec = torch.tensor(cond_vec, dtype=torch.float32, device=self._device)
+            else:
+                cond_vec = None
+
+            if cond_vec is not None:
+                imputed_data_torch = self._generator(x_obs_batch_torch, mask_batch_torch, noise, cond_vec)
+            else:
+                imputed_data_torch = self._generator(x_obs_batch_torch, mask_batch_torch, noise)
+
+            imputed_data_torch = (
+                x_obs_batch_torch * mask_batch_torch + imputed_data_torch * (1.0 - mask_batch_torch)
+            )
+            imputed_data_np = imputed_data_torch.detach().cpu().numpy()
+            imputed_result.append(imputed_data_np)
+
+        imputed_result = np.concatenate(imputed_result, axis=0)
+        imputed_result = imputed_result[:n]
+
+        # Verificar e ajustar dimensões
+        expected_dimensions = self._transformer.output_dimensions
+        if imputed_result.shape[1] > expected_dimensions:
+            print(f"Trimming imputed_result from {imputed_result.shape[1]} to {expected_dimensions} columns.")
+            imputed_result = imputed_result[:, :expected_dimensions]
+
+        print(f"Shape of imputed_result before inverse_transform: {imputed_result.shape}")
+        imputed_result = self._transformer.inverse_transform(imputed_result)
+
+        return imputed_result

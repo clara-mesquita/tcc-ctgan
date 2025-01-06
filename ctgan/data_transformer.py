@@ -44,6 +44,9 @@ class DataTransformer(object):
             namedtuple:
                 A ``ColumnTransformInfo`` object.
         """
+
+        print("_fit_continuous")
+        
         column_name = data.columns[0]
         gm = ClusterBasedNormalizer(
             missing_value_generation='from_column',
@@ -110,6 +113,7 @@ class DataTransformer(object):
             if column_name in discrete_columns:
                 column_transform_info = self._fit_discrete(raw_data[[column_name]])
             else:
+                print(f'column_name: {column_name}')
                 column_transform_info = self._fit_continuous(raw_data[[column_name]])
 
             self.output_info_list.append(column_transform_info.output_info)
@@ -190,7 +194,17 @@ class DataTransformer(object):
 
     def _inverse_transform_continuous(self, column_transform_info, column_data, sigmas, st):
         gm = column_transform_info.transform
-        data = pd.DataFrame(column_data[:, :2], columns=list(gm.get_output_sdtypes())).astype(float)
+        expected_columns = len(gm.get_output_sdtypes())  # Quantas colunas o transformador espera
+        actual_columns = column_data.shape[1]  # Quantas colunas existem
+
+        # Ajuste dinamicamente para o número esperado de colunas
+        if actual_columns > expected_columns:
+            print(f"Adjusting column_data from {actual_columns} to {expected_columns} columns.")
+            column_data = column_data[:, :expected_columns]
+
+        data = pd.DataFrame(column_data, columns=list(gm.get_output_sdtypes())).astype(float)
+
+        # Corrigir valores categóricos
         data[data.columns[1]] = np.argmax(column_data[:, 1:], axis=1)
         if sigmas is not None:
             selected_normalized_value = np.random.normal(data.iloc[:, 0], sigmas[st])
