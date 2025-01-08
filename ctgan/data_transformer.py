@@ -44,8 +44,6 @@ class DataTransformer(object):
             namedtuple:
                 A ``ColumnTransformInfo`` object.
         """
-
-        print("_fit_continuous")
         
         column_name = data.columns[0]
         gm = ClusterBasedNormalizer(

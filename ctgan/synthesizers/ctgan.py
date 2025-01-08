@@ -9,6 +9,7 @@ from torch import optim
 from torch.nn import BatchNorm1d, Linear, Module, ReLU, functional, LeakyReLU, Dropout, Sequential
 from tqdm import tqdm
 
+
 from ctgan.data_sampler import DataSampler
 from ctgan.data_transformer import DataTransformer
 from ctgan.synthesizers.base import BaseSynthesizer, random_state
@@ -464,9 +465,6 @@ class CTGAN(BaseSynthesizer):
         use_mask=True    # <--- IMPORTANTE se quiser passar máscara
     ).to(self._device)
         
-        print("data_dim =", data_dim)
-        print("cond_vec_dim =", self._data_sampler.dim_cond_vec())
-        print("discriminator_dim =", self._discriminator_dim)
 
         optimizerG = optim.Adam(
             self._generator.parameters(),
@@ -475,9 +473,6 @@ class CTGAN(BaseSynthesizer):
             weight_decay=self._generator_decay,
         )
 
-        print("oi")
-        print(discriminator)                    # ver se mostra camadas
-        print(list(discriminator.parameters()))
 
         optimizerD = optim.Adam(
             discriminator.parameters(),
@@ -686,10 +681,17 @@ class CTGAN(BaseSynthesizer):
 
 
     def impute(self, incomplete_data, batch_size=None, condition_column=None, condition_value=None):
+        print("Entrando em impute")
         if batch_size is None:
             batch_size = self._batch_size
 
+        print("Valores faltantes identificados pela máscara:")
+        print(np.isnan(incomplete_data).sum(axis=0))
+        
         incomplete_data_t = self._transformer.transform(incomplete_data)
+
+        print("incomplete_data_t")
+        print(incomplete_data_t)
 
         n = len(incomplete_data_t)
         steps = (n // batch_size) + 1
@@ -702,7 +704,24 @@ class CTGAN(BaseSynthesizer):
                 break
 
             batch_incomplete = incomplete_data_t[start:end]
+              # Convert to float to allow np.isnan to work
+            batch_incomplete = batch_incomplete.astype(float)
+
+            # Create the mask for non-missing values
             mask_batch = ~np.isnan(batch_incomplete)
+
+            print("Number of missing values in batch_incomplete:", np.isnan(batch_incomplete).sum())
+
+            batch_incomplete = np.where(
+    (batch_incomplete == "") | (batch_incomplete == "NULL") | (batch_incomplete == " "),
+    np.nan,
+    batch_incomplete
+)
+        
+            maskkkkk = pd.DataFrame(batch_incomplete)
+            maskkkkk.to_csv('batch_incomplete.csv')
+
+            mask_batch = ~np.isnan(batch_incomplete)  # True para valores NÃO faltantes
             x_obs_batch = np.copy(batch_incomplete)
             x_obs_batch[np.isnan(x_obs_batch)] = 0.0
 
@@ -733,9 +752,25 @@ class CTGAN(BaseSynthesizer):
             else:
                 imputed_data_torch = self._generator(x_obs_batch_torch, mask_batch_torch, noise)
 
-            imputed_data_torch = (
-                x_obs_batch_torch * mask_batch_torch + imputed_data_torch * (1.0 - mask_batch_torch)
-            )
+            imputed_data_torch = torch.where(
+    mask_batch_torch.bool(),  # Keep original values where mask is True
+    x_obs_batch_torch,        # Original data
+    imputed_data_torch        # Generated data for missing values
+)
+            
+            print("Máscara (mask_batch):")
+            print(mask_batch)
+            maskkkk = pd.DataFrame(mask_batch)
+            maskkkk.to_csv('mascara.csv')
+
+            print("Dados originais (x_obs_batch):")
+            print(x_obs_batch)
+            obssss = pd.DataFrame(x_obs_batch)
+            obssss.to_csv('observed.csv')
+
+            print("Dados imputados (imputed_data_torch):")
+            print(imputed_data_torch)
+
             imputed_data_np = imputed_data_torch.detach().cpu().numpy()
             imputed_result.append(imputed_data_np)
 
@@ -747,6 +782,12 @@ class CTGAN(BaseSynthesizer):
         if imputed_result.shape[1] > expected_dimensions:
             print(f"Trimming imputed_result from {imputed_result.shape[1]} to {expected_dimensions} columns.")
             imputed_result = imputed_result[:, :expected_dimensions]
+
+        original_values_preserved = torch.all(
+        imputed_data_torch[mask_batch_torch.bool()] == x_obs_batch_torch[mask_batch_torch.bool()]
+        )
+        print("Original values preserved:", original_values_preserved)
+
 
         print(f"Shape of imputed_result before inverse_transform: {imputed_result.shape}")
         imputed_result = self._transformer.inverse_transform(imputed_result)

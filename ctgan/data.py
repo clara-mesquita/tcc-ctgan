@@ -7,15 +7,12 @@ import pandas as pd
 
 
 def read_csv(csv_filename, meta_filename=None, header=True, discrete=None):
-    print("DEBUG: Entered read_csv function")
     
     """Read a csv file."""
     data = pd.read_csv(csv_filename, header='infer' if header else None)  
     data = data.drop(columns=data.columns[0])  
     data = data.drop(columns = ['Link_bottleneck'])
-    print(data.info())
-    print(data.head())
-
+    
     if meta_filename:
         with open(meta_filename) as meta_file:
             metadata = json.load(meta_file)

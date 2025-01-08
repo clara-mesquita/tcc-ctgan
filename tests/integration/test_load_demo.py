@@ -6,7 +6,7 @@ def test_load_demo():
     # Setup
     discrete_columns = ['Hop_count'
     ]
-    ctgan = CTGAN(epochs=500)
+    ctgan = CTGAN(epochs=1000)
 
     # Run
     data = load_demo()
