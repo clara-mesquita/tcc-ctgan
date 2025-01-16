@@ -1,7 +1,7 @@
 Column,RMSE
 Timestamp_cubic,0.0
-Vazao,263848038.91000623
-Vazao_bbr,512732730.4822753
+Vazao,84761072.52803798
+Vazao_bbr,30457940.31174728
 Atraso(ms),0.0
 Hop_count,0.0
 Bottleneck,0.0
