@@ -8,6 +8,7 @@ from sklearn.metrics import mean_squared_error
 from ctgan.data import read_csv, read_tsv, get_null_mask
 from ctgan.synthesizers.ctgan import CTGAN
 
+
 import numpy as np
 
 np.random.seed(42)
@@ -239,11 +240,24 @@ def main_rmse():
 
     # Calcular o RMSE por coluna
     rmse_results = {}
-    for column in original_data.columns:
-        original_values = original_data[column].dropna().values
-        imputed_values = imputed_data.loc[original_data[column].notna(), column].values
+    # for column in original_data.columns:
+    #     original_values = original_data[column].dropna().values
+    #     imputed_values = imputed_data.loc[original_data[column].notna(), column].values
 
+    #     rmse = np.sqrt(mean_squared_error(original_values, imputed_values))
+    #     rmse_results[column] = rmse
+
+    for column in original_data.columns:
+        # Get non-null values from original_data
+        original_values = original_data[column].dropna().values
+        
+        # Get corresponding imputed values from imputed_data
+        imputed_values = imputed_data.loc[original_data[column].notna(), column].values
+        
+        # Compute RMSE
         rmse = np.sqrt(mean_squared_error(original_values, imputed_values))
+        
+        # Store the RMSE result
         rmse_results[column] = rmse
 
     # Exibir resultados
@@ -255,6 +269,7 @@ def main_rmse():
     rmse_df = pd.DataFrame(list(rmse_results.items()), columns=['Column', 'RMSE'])
     rmse_df.to_csv('rmse_results.csv', index=False)
     print("RMSE results saved to 'rmse_results.csv'")
+
 
 
 if __name__ == '__main__':
