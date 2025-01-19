@@ -5,12 +5,10 @@ import argparse
 import pandas as pd
 from sklearn.metrics import mean_squared_error
 
-from ctgan.data import read_csv, get_null_mask
+from ctgan.data import read_csv, read_tsv, get_null_mask
 from ctgan.synthesizers.ctgan import CTGAN
 
 import numpy as np
-
-import os 
 
 np.random.seed(42)
 
@@ -98,39 +96,16 @@ def main():
     """CLI."""
     args = _parse_args()
 
-    # if args.tsv:
-    #     data, discrete_columns = read_tsv(args.data, args.metadata)
-    # else:
-    #     data, discrete_columns = read_csv(args.data, args.metadata, args.header, args.discrete)
+    if args.tsv:
+        data, discrete_columns = read_tsv(args.data, args.metadata)
+    else:
+        data, discrete_columns = read_csv(args.data, args.metadata, args.header, args.discrete)
 
     
 
-    # if args.load:
-    #     model = CTGAN.load(args.load)
-    # else:
-    #     generator_dim = [int(x) for x in args.generator_dim.split(',')]
-    #     discriminator_dim = [int(x) for x in args.discriminator_dim.split(',')]
-    #     model = CTGAN(
-    #         embedding_dim=args.embedding_dim,
-    #         generator_dim=generator_dim,
-    #         discriminator_dim=discriminator_dim,
-    #         generator_lr=args.generator_lr,
-    #         generator_decay=args.generator_decay,
-    #         discriminator_lr=args.discriminator_lr,
-    #         discriminator_decay=args.discriminator_decay,
-    #         batch_size=args.batch_size,
-    #         epochs=args.epochs,
-    #     )
-
-    source_folder = "./datasets-by-source"
-
-    # Lista de arquivos na pasta de origem
-    files = [f for f in os.listdir(source_folder) if f.endswith('.csv')]
-
-    for file in files:
-        file_path = os.path.join(source_folder, file)
-        data, discrete_columns = read_csv(file_path, args.metadata, args.header, args.discrete)
-
+    if args.load:
+        model = CTGAN.load(args.load)
+    else:
         generator_dim = [int(x) for x in args.generator_dim.split(',')]
         discriminator_dim = [int(x) for x in args.discriminator_dim.split(',')]
         model = CTGAN(
@@ -145,43 +120,43 @@ def main():
             epochs=args.epochs,
         )
 
-        col_vazao = data.columns.get_loc("Vazao")
-        col_vazao_bbr = data.columns.get_loc("Vazao_bbr")
+    col_vazao = data.columns.get_loc("Vazao")
+    col_vazao_bbr = data.columns.get_loc("Vazao_bbr")
 
-        n_test = data.shape[0]
-        num_missing_vazao = int(n_test * 0.15)
-        num_missing_vazao_bbr = int(n_test * 0.15)
+    n_test = data.shape[0]
+    num_missing_vazao = int(n_test * 0.10)
+    num_missing_vazao_bbr = int(n_test * 0.10)
 
-        missing_rows_vazao = np.random.choice(n_test, num_missing_vazao, replace=False)
-        missing_rows_vazao_bbr = np.random.choice(n_test, num_missing_vazao_bbr, replace=False)
+    missing_rows_vazao = np.random.choice(n_test, num_missing_vazao, replace=False)
+    missing_rows_vazao_bbr = np.random.choice(n_test, num_missing_vazao_bbr, replace=False)
 
-        incomplete_data = data.copy()
-        incomplete_data.iloc[missing_rows_vazao, col_vazao] = np.nan
-        incomplete_data.iloc[missing_rows_vazao_bbr, col_vazao_bbr] = np.nan
+    incomplete_data = data.copy()
+    incomplete_data.iloc[missing_rows_vazao, col_vazao] = np.nan
+    incomplete_data.iloc[missing_rows_vazao_bbr, col_vazao_bbr] = np.nan
 
-        incomplete_data.to_csv(f'./datasets-incomplete/{file}')
-        # Gera a máscara de valores nulos
-        mask = get_null_mask(incomplete_data)
+    incomplete_data.to_csv("incomplete_data_check.csv")
+    # Gera a máscara de valores nulos
+    mask = get_null_mask(incomplete_data)
 
-        model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=300)
+    model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=300)
 
-        if args.save is not None:
-            model.save(args.save)
+    if args.save is not None:
+        model.save(args.save)
 
-        # Imputação dos valores
-        imputed_data = model.impute(incomplete_data)
+    # Imputação dos valores
+    imputed_data = model.impute(incomplete_data)
 
-        # Substituindo apenas os valores faltantes usando a máscara
-        updated_data = data.where(mask == 0, imputed_data)
+    # Substituindo apenas os valores faltantes usando a máscara
+    updated_data = data.where(mask == 0, imputed_data)
 
-        # Salva os dados atualizados no arquivo de saída especificado
-        if args.tsv:
-            updated_data.to_csv(f'./datasets-by-source-imputed/gan/{file}', sep='\t', index=False)
-        else:
-            updated_data.to_csv(f'./datasets-by-source-imputed/gan/{file}', index=False)
+    # Salva os dados atualizados no arquivo de saída especificado
+    if args.tsv:
+        updated_data.to_csv(args.output, sep='\t', index=False)
+    else:
+        updated_data.to_csv(args.output, index=False)
 
-        print(f"Imputed data saved to {f'./datasets-by-source-imputed/gan/{file}'}")
-        
+    print(f"Imputed data saved to {args.output}")
+    
     
 # def main():
 #     """CLI."""
