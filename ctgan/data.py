@@ -2,6 +2,8 @@
 
 import json
 
+import os 
+
 import numpy as np
 import pandas as pd
 
@@ -97,3 +99,33 @@ def get_null_mask(df):
     """
     null_mask = df.isna().astype(int)
     return null_mask
+
+def generate_incomplete_data(data, name, saving_dir, percentage = 0.10, np_seed = 42, columns = ['Vazao', 'Vazao_bbr']):
+    """
+    Returns and saves a dataset with missing data
+    """
+
+    # Defining a seed for replication
+    np.random.seed(np_seed)
+
+    # Specifiing the missing data percentage in the name of diretory and creating if does not exist
+    percentage_string = str(int(percentage * 100))
+    saving_dir = f"{saving_dir}_{percentage_string}"
+    if not os.path.exists(saving_dir):
+        os.makedirs(saving_dir)
+        print(f"'{saving_dir}' directory was created for saving incomplete_data")
+
+    incomplete_data = data.copy()
+    for column in columns:
+        col = data.columns.get_loc(column)
+
+        n_test = data.shape[0]
+        num_missing = int(n_test * percentage)
+
+        missing_rows = np.random.choice(n_test, num_missing, replace=False)
+
+        incomplete_data.iloc[missing_rows, col] = np.nan
+
+    incomplete_data.to_csv(f"{saving_dir}/{name}")
+
+    return incomplete_data

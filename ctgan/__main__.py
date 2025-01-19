@@ -1,17 +1,13 @@
-"""CLI."""
-
 import argparse
 
-import pandas as pd
-from sklearn.metrics import mean_squared_error
+# import pandas as pd
+# from sklearn.metrics import mean_squared_error
 
-from ctgan.data import read_csv, read_tsv, get_null_mask
+# from ctgan.data import read_csv, read_tsv, get_null_mask
+# from ctgan.synthesizers.ctgan import CTGAN
+
+from ctgan.data import read_csv, generate_incomplete_data
 from ctgan.synthesizers.ctgan import CTGAN
-
-
-import numpy as np
-
-np.random.seed(42)
 
 def _parse_args():
     parser = argparse.ArgumentParser(description='CTGAN Command Line Interface')
@@ -94,15 +90,18 @@ def _parse_args():
 
 
 def main():
-    """CLI."""
     args = _parse_args()
 
-    if args.tsv:
-        data, discrete_columns = read_tsv(args.data, args.metadata)
-    else:
-        data, discrete_columns = read_csv(args.data, args.metadata, args.header, args.discrete)
+    epochs = 1000
 
-    
+    # args.data = ./datasets/original/df_mg.csv
+    # args.metada = None
+    # args.header = True
+    # args.discrete = None
+
+    data_file = "./datasets/original/df_mg.csv"
+
+    data, discrete_columns = read_csv(data_file, None, True, None)
 
     if args.load:
         model = CTGAN.load(args.load)
@@ -118,160 +117,17 @@ def main():
             discriminator_lr=args.discriminator_lr,
             discriminator_decay=args.discriminator_decay,
             batch_size=args.batch_size,
-            epochs=args.epochs,
+            epochs=epochs,
         )
-
-    col_vazao = data.columns.get_loc("Vazao")
-    col_vazao_bbr = data.columns.get_loc("Vazao_bbr")
-
-    n_test = data.shape[0]
-    num_missing_vazao = int(n_test * 0.10)
-    num_missing_vazao_bbr = int(n_test * 0.10)
-
-    missing_rows_vazao = np.random.choice(n_test, num_missing_vazao, replace=False)
-    missing_rows_vazao_bbr = np.random.choice(n_test, num_missing_vazao_bbr, replace=False)
-
-    incomplete_data = data.copy()
-    incomplete_data.iloc[missing_rows_vazao, col_vazao] = np.nan
-    incomplete_data.iloc[missing_rows_vazao_bbr, col_vazao_bbr] = np.nan
-
-    incomplete_data.to_csv("incomplete_data_check.csv")
-    # Gera a máscara de valores nulos
-    mask = get_null_mask(incomplete_data)
-
-    model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=300)
-
-    if args.save is not None:
-        model.save(args.save)
-
-    # Imputação dos valores
-    imputed_data = model.impute(incomplete_data)
-
-    # Substituindo apenas os valores faltantes usando a máscara
-    updated_data = data.where(mask == 0, imputed_data)
-
-    # Salva os dados atualizados no arquivo de saída especificado
-    if args.tsv:
-        updated_data.to_csv(args.output, sep='\t', index=False)
-    else:
-        updated_data.to_csv(args.output, index=False)
-
-    print(f"Imputed data saved to {args.output}")
     
+    name = data_file.split('/')[3]
+    saving_dir = "./datasets/incomplete"
     
-# def main():
-#     """CLI."""
-#     args = _parse_args()
+    incomplete_data = generate_incomplete_data(data, name, saving_dir)
+
+    # print(incomplete_data)
+
     
-#     # Define a seed para reprodução
-#     np.random.seed(42)
-
-#     if args.tsv:
-#         data, discrete_columns = read_tsv(args.data, args.metadata)
-#     else:
-#         print("About to call read_csv()")
-#         data, discrete_columns = read_csv(args.data, args.metadata, args.header, args.discrete)
-
-#     col_vazao = data.columns.get_loc("Vazao")
-#     col_vazao_bbr = data.columns.get_loc("Vazao_bbr")
-
-#     n_test = data.shape[0]
-#     num_missing_vazao = int(n_test * 0.10)
-#     num_missing_vazao_bbr = int(n_test * 0.10)
-
-#     missing_rows_vazao = np.random.choice(n_test, num_missing_vazao, replace=False)
-#     missing_rows_vazao_bbr = np.random.choice(n_test, num_missing_vazao_bbr, replace=False)
-
-#     incomplete_data = data.copy()
-#     incomplete_data.iloc[missing_rows_vazao, col_vazao] = np.nan
-#     incomplete_data.iloc[missing_rows_vazao_bbr, col_vazao_bbr] = np.nan
-
-#     # Imputação usando KNN
-#     knn_imputer = KNNImputer(n_neighbors=5)
-#     imputed_data_knn = knn_imputer.fit_transform(incomplete_data)
-#     imputed_data_knn = pd.DataFrame(imputed_data_knn, columns=data.columns)
-
-#     # Calcular RMSE para a coluna "Vazao" e "Vazao_bbr"
-#     rmse_vazao = sqrt(mean_squared_error(data.iloc[missing_rows_vazao, col_vazao], 
-#                                          imputed_data_knn.iloc[missing_rows_vazao, col_vazao]))
-
-#     rmse_vazao_bbr = sqrt(mean_squared_error(data.iloc[missing_rows_vazao_bbr, col_vazao_bbr], 
-#                                              imputed_data_knn.iloc[missing_rows_vazao_bbr, col_vazao_bbr]))
-
-#     # Salvar os resultados do RMSE
-#     rmse_results = pd.DataFrame({
-#         "Column": ["Vazao", "Vazao_bbr"],
-#         "RMSE": [rmse_vazao, rmse_vazao_bbr]
-#     })
-#     rmse_results.to_csv("rmse_results_knn.csv", index=False)
-
-#     print("RMSE Results:")
-#     print(rmse_results)
-
-#     # Salva os dados imputados no arquivo de saída especificado
-#     if args.tsv:
-#         imputed_data_knn.to_csv(args.output, sep='\t', index=False)
-#     else:
-#         imputed_data_knn.to_csv(args.output, index=False)
-
-#     print(f"Imputed data saved to {args.output}")
-
-
-def main_rmse():
-    args = _parse_args()
-
-    # Carregar os dados originais e imputados
-    original_data = pd.read_csv(args.data)
-    imputed_data = pd.read_csv(args.output)
-
-    original_data = original_data.drop(columns=['Link_bottleneck'])
-
-    # Identificar índices com NaN no imputed_data
-    nan_indices = imputed_data[imputed_data.isna().any(axis=1)].index
-
-    # Remover valores correspondentes em original_data
-    original_data = original_data.drop(index=nan_indices)
-    imputed_data = imputed_data.dropna()
-    original_data = original_data.drop(columns=original_data.columns[0]) 
-    
-    # Verificar se os dados possuem o mesmo formato
-    if original_data.shape != imputed_data.shape:
-        raise ValueError("Original data and imputed data must have the same shape")
-
-    # Calcular o RMSE por coluna
-    rmse_results = {}
-    # for column in original_data.columns:
-    #     original_values = original_data[column].dropna().values
-    #     imputed_values = imputed_data.loc[original_data[column].notna(), column].values
-
-    #     rmse = np.sqrt(mean_squared_error(original_values, imputed_values))
-    #     rmse_results[column] = rmse
-
-    for column in original_data.columns:
-        # Get non-null values from original_data
-        original_values = original_data[column].dropna().values
-        
-        # Get corresponding imputed values from imputed_data
-        imputed_values = imputed_data.loc[original_data[column].notna(), column].values
-        
-        # Compute RMSE
-        rmse = np.sqrt(mean_squared_error(original_values, imputed_values))
-        
-        # Store the RMSE result
-        rmse_results[column] = rmse
-
-    # Exibir resultados
-    print("RMSE por coluna:")
-    for column, rmse in rmse_results.items():
-        print(f"{column}: {rmse:.4f}")
-
-    # Salvar resultados em um arquivo
-    rmse_df = pd.DataFrame(list(rmse_results.items()), columns=['Column', 'RMSE'])
-    rmse_df.to_csv('rmse_results.csv', index=False)
-    print("RMSE results saved to 'rmse_results.csv'")
-
-
 
 if __name__ == '__main__':
     main()
-    main_rmse()
