@@ -122,7 +122,7 @@ def main():
     #         epochs=args.epochs,
     #     )
 
-    source_folder = "./datasets-by-source"
+    source_folder = "./datasets-by-source2"
 
     # Lista de arquivos na pasta de origem
     files = [f for f in os.listdir(source_folder) if f.endswith('.csv')]
@@ -163,7 +163,7 @@ def main():
         # Gera a máscara de valores nulos
         mask = get_null_mask(incomplete_data)
 
-        model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=300)
+        model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=1000)
 
         if args.save is not None:
             model.save(args.save)

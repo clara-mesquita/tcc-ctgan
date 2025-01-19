@@ -1,0 +1,60 @@
+Summary Statistics:
+                              mean           std          min           max
+Method     Column                                                          
+gan        Vazao      3.175364e+08  3.247527e+08  70193422.06  1.110943e+09
+           Vazao_bbr  3.022744e+08  3.809086e+08  27795604.62  1.079557e+09
+knn        Vazao      1.838044e+08  1.698785e+08  66007906.57  6.591006e+08
+           Vazao_bbr  1.684515e+08  1.992050e+08  26024477.48  5.655802e+08
+regression Vazao      2.255903e+08  2.541741e+08  65204157.95  9.167853e+08
+           Vazao_bbr  2.223230e+08  2.924976e+08  24260936.53  8.542905e+08
+
+Best performing methods by state and column:
+         File     Column      Method          RMSE
+0   df_ac.csv      Vazao         knn  7.798975e+07
+49  df_ac.csv  Vazao_bbr  regression  3.399007e+07
+50  df_am.csv      Vazao  regression  1.369709e+08
+3   df_am.csv  Vazao_bbr         knn  4.153563e+07
+52  df_ap.csv      Vazao  regression  8.946515e+07
+53  df_ap.csv  Vazao_bbr  regression  4.218045e+07
+6   df_ba.csv      Vazao         knn  2.245176e+08
+7   df_ba.csv  Vazao_bbr         knn  2.816293e+08
+56  df_ce.csv      Vazao  regression  7.080645e+07
+57  df_ce.csv  Vazao_bbr  regression  3.155653e+07
+58  df_es.csv      Vazao  regression  6.520416e+07
+59  df_es.csv  Vazao_bbr  regression  2.862919e+07
+60  df_go.csv      Vazao  regression  9.267333e+07
+61  df_go.csv  Vazao_bbr  regression  2.962770e+07
+62  df_ma.csv      Vazao  regression  8.163184e+07
+63  df_ma.csv  Vazao_bbr  regression  3.650320e+07
+16  df_mg.csv      Vazao         knn  2.284834e+08
+17  df_mg.csv  Vazao_bbr         knn  4.084385e+08
+66  df_ms.csv      Vazao  regression  7.587065e+07
+67  df_ms.csv  Vazao_bbr  regression  2.426094e+07
+68  df_mt.csv      Vazao  regression  6.654916e+07
+69  df_mt.csv  Vazao_bbr  regression  3.348905e+07
+22  df_pa.csv      Vazao         knn  4.472229e+08
+23  df_pa.csv  Vazao_bbr         knn  4.821167e+08
+72  df_pb.csv      Vazao  regression  8.703740e+07
+73  df_pb.csv  Vazao_bbr  regression  3.220992e+07
+74  df_pi.csv      Vazao  regression  7.454233e+07
+75  df_pi.csv  Vazao_bbr  regression  3.001264e+07
+28  df_pr.csv      Vazao         knn  2.110151e+08
+29  df_pr.csv  Vazao_bbr         knn  3.915789e+08
+30  df_rj.csv      Vazao         knn  6.591006e+08
+31  df_rj.csv  Vazao_bbr         knn  5.655802e+08
+80  df_rn.csv      Vazao  regression  7.288766e+07
+81  df_rn.csv  Vazao_bbr  regression  4.203172e+07
+82  df_ro.csv      Vazao  regression  6.660150e+07
+83  df_ro.csv  Vazao_bbr  regression  2.530278e+07
+36  df_rr.csv      Vazao         knn  1.052477e+08
+85  df_rr.csv  Vazao_bbr  regression  7.716980e+07
+38  df_rs.csv      Vazao         knn  1.999717e+08
+39  df_rs.csv  Vazao_bbr         knn  2.629047e+08
+40  df_sc.csv      Vazao         knn  5.208817e+08
+41  df_sc.csv  Vazao_bbr         knn  5.504116e+08
+90  df_se.csv      Vazao  regression  1.167483e+08
+91  df_se.csv  Vazao_bbr  regression  3.574017e+07
+44  df_sp.csv      Vazao         knn  4.978576e+08
+45  df_sp.csv  Vazao_bbr         knn  4.947953e+08
+46  df_to.csv      Vazao         knn  8.757441e+07
+95  df_to.csv  Vazao_bbr  regression  3.954284e+07
