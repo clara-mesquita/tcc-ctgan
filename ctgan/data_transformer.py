@@ -122,22 +122,48 @@ class DataTransformer(object):
         column_name = data.columns[0]
         flattened_column = data[column_name].to_numpy().flatten()
         data = data.assign(**{column_name: flattened_column})
-        gm = column_transform_info.transform
-        transformed = gm.transform(data)
 
-        #  Converts the transformed data to the appropriate output format.
-        #  The first column (ending in '.normalized') stays the same,
-        #  but the lable encoded column (ending in '.component') is one hot encoded.
+        # Initialize or retrieve the transformer
+        gm = column_transform_info.transform
+
+        # Ensure missing values are properly set in the input
+        nan_mask = data[column_name].isna()  # Save the NaN mask
+        print(f"Before transformation (continuous): {data.isna().sum()}")
+
+        # Transform the data with missing value handling
+        transformed = gm.transform(data)  # gm is a ClusterBasedNormalizer instance
+        print(f"After transformation (continuous): {pd.DataFrame(transformed).isna().sum()}")
+
+        # Check if the 'is_null' column is present in the output
+        if f'{column_name}.is_null' in transformed.columns:
+            print(f"Missingness tracked by 'is_null' for column: {column_name}")
+
+        # Prepare the output matrix
         output = np.zeros((len(transformed), column_transform_info.output_dimensions))
         output[:, 0] = transformed[f'{column_name}.normalized'].to_numpy()
         index = transformed[f'{column_name}.component'].to_numpy().astype(int)
         output[np.arange(index.size), index + 1] = 1.0
 
+        # Reintroduce NaN values based on the mask if no `is_null` column
+        if f'{column_name}.is_null' not in transformed.columns:
+            output[nan_mask.to_numpy(), :] = np.nan
+
         return output
+
+
 
     def _transform_discrete(self, column_transform_info, data):
         ohe = column_transform_info.transform
-        return ohe.transform(data).to_numpy()
+        
+        # Save the NaN mask before transformation
+        nan_mask = data.isna()
+        
+        transformed = ohe.transform(data).to_numpy()
+
+        # Reintroduce NaN values based on the mask
+        transformed[nan_mask.to_numpy().flatten(), :] = np.nan
+        return transformed
+
 
     def _synchronous_transform(self, raw_data, column_transform_info_list):
         """Take a Pandas DataFrame and transform columns synchronous.
@@ -174,13 +200,18 @@ class DataTransformer(object):
         return Parallel(n_jobs=-1)(processes)
 
     def transform(self, raw_data):
-        """Take raw data and output a matrix data."""
+        print("Entering transform function!")
         if not isinstance(raw_data, pd.DataFrame):
             column_names = [str(num) for num in range(raw_data.shape[1])]
             raw_data = pd.DataFrame(raw_data, columns=column_names)
 
-        # Only use parallelization with larger data sizes.
-        # Otherwise, the transformation will be slower.
+        # Save the NaN mask for the entire dataset
+        nan_mask = raw_data.isna()
+        print("Initial missing values (per column):")
+        print(nan_mask.sum())  # Print missing values per column
+        print(f"Total missing values in raw_data: {nan_mask.sum().sum()}")
+
+        # Transform the data
         if raw_data.shape[0] < 500:
             column_data_list = self._synchronous_transform(
                 raw_data, self._column_transform_info_list
@@ -188,7 +219,39 @@ class DataTransformer(object):
         else:
             column_data_list = self._parallel_transform(raw_data, self._column_transform_info_list)
 
-        return np.concatenate(column_data_list, axis=1).astype(float)
+        # Combine transformed columns
+        transformed_data = np.concatenate(column_data_list, axis=1).astype(float)
+
+        # Reintroduce NaN values into transformed data
+        for i, column_transform_info in enumerate(self._column_transform_info_list):
+            start_dim = sum(info.output_dimensions for info in self._column_transform_info_list[:i])
+            end_dim = start_dim + column_transform_info.output_dimensions
+
+            if 'is_null' in [info.dim for info in column_transform_info.output_info]:
+                print(f"Skipping NaN reintroduction for column: {column_transform_info.column_name} (handled by is_null)")
+                continue
+
+            column_nan_mask = nan_mask[column_transform_info.column_name].to_numpy()
+
+            # Apply NaN only to the first dimension (e.g., `.normalized`)
+            transformed_data[column_nan_mask, start_dim] = np.nan
+
+
+        # Debugging: Check missing values in transformed data
+        transformed_nan_mask = np.isnan(transformed_data)
+
+        print("Final missing values (total):", np.sum(transformed_nan_mask))
+
+        # Optional: Compare masks
+        original_nan_count = nan_mask.sum().sum()
+        transformed_nan_count = np.sum(transformed_nan_mask)
+        if original_nan_count == transformed_nan_count:
+            print("The number of missing values matches the original data.")
+        else:
+            print(f"Mismatch in missing values! Original: {original_nan_count}, Transformed: {transformed_nan_count}")
+
+        return transformed_data
+
 
     def _inverse_transform_continuous(self, column_transform_info, column_data, sigmas, st):
         gm = column_transform_info.transform

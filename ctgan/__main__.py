@@ -6,6 +6,7 @@ import argparse
 # from ctgan.data import read_csv, read_tsv, get_null_mask
 # from ctgan.synthesizers.ctgan import CTGAN
 
+
 from ctgan.data import read_csv, generate_incomplete_data
 from ctgan.synthesizers.ctgan import CTGAN
 
@@ -88,6 +89,28 @@ def _parse_args():
 
     return parser.parse_args()
 
+def evaluate_imputation(dataset1, dataset2, null_mask):
+    # Verificar valores NaN restantes
+    nan_count_1 = dataset1.isna().sum().sum()
+    nan_count_2 = dataset2.isna().sum().sum()
+
+    print(f"Valores NaN restantes no Dataset 1: {nan_count_1}")
+    print(f"Valores NaN restantes no Dataset 2: {nan_count_2}")
+
+    # Verificar se valores originais foram preservados
+    original_values_preserved = (dataset1[null_mask] == dataset2[null_mask]).all().all()
+
+    if original_values_preserved:
+        print("Os valores originais foram preservados.")
+    else:
+        print("Os valores originais NAO foram preservados.")
+
+    return {
+        "nan_count_1": nan_count_1,
+        "nan_count_2": nan_count_2,
+        "original_values_preserved": original_values_preserved,
+    }
+
 
 def main():
     args = _parse_args()
@@ -127,7 +150,15 @@ def main():
 
     # print(incomplete_data)
 
-    
+    model.fit(train_data=incomplete_data, discrete_columns=discrete_columns, epochs=epochs)
+
+    if args.save is not None:
+        model.save(args.save)
+
+    imputed_data = model.impute(incomplete_data)
+
+    #Imputation evaluation
+    # results = evaluate_imputation(incomplete_data, imputed_data, ~incomplete_data.isna())
 
 if __name__ == '__main__':
     main()
